@@ -14,6 +14,7 @@
 ## Imports
 from datetime import datetime ,timedelta
 from time import time as wallClock
+from common import * # the module with your functions
 from sys import exit
 
 ## Settings
@@ -41,89 +42,6 @@ frameDict = {}
 delim = ";"
 ping = "'"
 
-## Classes
-
-class trackPoint:
-    def __init__(self, x, y, date, time, frameId=0, Id=0, pPoint=None, stepsBackSec=None):
-        self.x = x
-        self.y = y
-        self.prevPoint = pPoint
-        self.stepsBackSec = stepsBackSec
-        self.frameId = frameId
-        self.Id = Id
-        dt = formatDateTime(date, time)
-        try:
-            self.dateTime = datetime(dt[2], dt[1], dt[0], dt[3], dt[4], dt[5], dt[6])
-        except:
-            print("Datetime must be given as MM-DD-YYYY HH:MM:SS:MS")
-            print("12-06-2013 14:00:00:100")
-            print("Parameters given:", dt[0], dt[1], dt[2], dt[3], dt[4], dt[5], dt[6])
-            ##exit(0)
-        self.deltaDist = 0.0 ## Distance relative to the last location, m
-        self.stepBackDist = 0.0  ## Distance relative to the at a given point back in time, m
-        self.akkuDist = 0.0  ## Distance relative to the start of the track, m
-
-        self.deltaTimeSec = 0.0 ## Time spend relative to the last location, seconds
-        self.stepBackTimeSec = 0.0  ## TODO: Time spend relative to a given point back in time, seconds
-        self.akkuTimeSec = 0.0  ## Time spend relative to the start of the track, seconds
-
-        self.speed = 0.0     ## Speed relative to the last location, km/h
-        self.stepBackSpeed = 0.0 ## TODO: Speed over the last second, km/h
-        self.akkuSpeed = 0.0 ## Speed over entire track this far, km/h
-
-        self.angle = 0.0     ## From previous location (relative to the previous leg)
-        self.stepBackAngle = 0.0 ## TODO: From location relative to a given point back in time (relative to the previous leg)
-        self.akkuAngle = 0.0 ## From start of the track (relative to the end of the track)
-        if pPoint:
-            self.deltaDist = dist2D(self.x, self.y, pPoint.x, pPoint.y)  ## m
-            self.akkuDist = pPoint.akkuDist + self.deltaDist   ## Distance relative to the start of the track, m
-            dtime = self.dateTime - self.prevPoint.dateTime
-            self.deltaTimeSec = dtime.seconds + (dtime.microseconds / 1000000.0) ## Time spend relative to the last location, seconds
-            self.akkuTimeSec = pPoint.akkuTimeSec + self.deltaTimeSec  ## Time spend relative to the start of the track, seconds
-            if self.deltaTimeSec > 0:
-                self.speed = (self.deltaDist / 1000) /(self.deltaTimeSec / 3600)     ## Speed relative to the last location, km/h
-            else:
-                self.speed = 0.0
-            if self.akkuTimeSec > 0:
-                self.akkuSpeed = (self.akkuDist / 1000) /(self.akkuTimeSec / 3600) ## Speed over entire track this far, km/h
-            else:
-                self.akkuSpeed = 0.0
-            ## --- Calculating parameters 'self.stepsBackSec' back in time ---
-            pp = self.prevPoint
-            deltaT = 0.0 ##float((self.dateTime - pp.dateTime).seconds)
-            c = 0
-            while pp and deltaT < self.stepsBackSec:
-                deltaT = (self.dateTime - pp.dateTime).seconds
-##                if int(self.Id) in (0, 1) and int(self.frameId) in (61, 62):
-##                    print(self.frameId, self.Id, pp.prevPoint.frameId, (self.dateTime - pp.dateTime).seconds, c, self.Id, deltaT)
-                p = pp
-                pp = pp.prevPoint
-                ##print(pp.Id, deltaT, pp.dateTime)
-                c += 1
-            if not pp:
-                self.stepBackDist = 0.0
-                self.stepBackTimeSec = 0.0
-                self.stepBackAngle = 0.0
-            else:
-                ##print(deltaT, self.stepsBackSec, self.akkuDist, pp.akkuDist)
-                self.stepBackDist = self.akkuDist - pp.akkuDist
-                self.stepBackTimeSec = (self.dateTime - pp.dateTime).seconds
-                ##print(self.dateTime, pp.dateTime, self.stepBackTimeSec)
-                ##self.stepBackSpeed = (self.stepBackDist / 1000) /(self.stepBackTimeSec / 3600) ## TODO
-                self.stepBackAngle = 0.0 ##TODO
-##            if int(self.frameId) in (61, 62, 63):
-##                print(c, pp, self.frameId, self.dateTime, deltaT, '%.2f' % self.stepBackDist, '%.2f' % self.stepBackSpeed)
-
-# Format date and time strings
-def formatDateTime(dateStr, timeStr):
-    ## Should be operated by datetime.strftime(), but it doesn't seems to work on microseconds
-    listDate = dateStr.split("-")
-    listTime = timeStr.split(":")
-    ## return: year, month, day, hour, min, sec, millisec
-    return int(listDate[0]), int(listDate[1]), int(listDate[2]), int(listTime[0]), int(listTime[1]), int(listTime[2]), int(listTime[3]) * 1000
-
-def dist2D(x1, y1, x2, y2):
-    return(((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5)
 
 ## Main
 line = inHdl.readline()

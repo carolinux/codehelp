@@ -16,21 +16,23 @@ import os, os.path
 import sys
 from datetime import datetime ,timedelta
 from time import time as wallClock
+from common import *
 
 # Settings
 path = "C:\\Users\\lvp326\\Dropbox\\PhD\\Urban_Movement\\Code".replace("\\", "/")
 fn = "00100002" ## Remember to set change videoData and videoStartTime below to match the current file
 inFileName = fn + ".txt"
-inFile = open(path + "/" + inFileName, "r")
+inFile = open(os.path.join(path,inFileName), "r") # os path join is portable across operating
+# systems
 
 outFileName = fn + "_out.txt"
-outFile = open(path + "/" + outFileName, "w")
+outFile = open(os.path.join(path,outFileName), "w")
 
 outFileNameBasic = fn + "_out_Basic.txt"
-outFileBasic = open(path + "/" + outFileNameBasic, "w")
+outFileBasic = open(os.path.join(path,outFileNameBasic), "w")
 
 outStatFileName = fn + "_outStat.txt"
-outStatFile = open(path + "/" + outStatFileName, "w")
+outStatFile = open(os.path.join(path, outStatFileName), "w")
 
 startExecusionTime = wallClock()
 backFrameLengthSec = 5 ## Frames back in time use for speed calculations etc.
@@ -48,110 +50,8 @@ videoDate="14-06-2013"
 videoStartTime = "13:00:00.000"
 videoFrameRate = 30 ## The rounding to milliseconds procedure only work correctly for 30 FPS video
 
-## Defs
-# Format date and time strings
-def formatDateTime(dateStr, timeStr):
-    listDate = dateStr.split("-")
-    listTime = timeStr.split(":")
-    listMilli = listTime[2].split(".")
-    return int(listDate[0]), int(listDate[1]), int(listDate[2]), int(listTime[0]), int(listTime[1]), int(listMilli[0]), int(listMilli[1]) * 1000 ## * 1000 to get six digits on subseconds field
-
-# Round MilliSec to 3 digits
-def roundMilliSec(self): ## Cannot handle if milliseconds are 0 - the function should not be called if that is the case.
-    tail = str(self)[-7:]
-    split = str(round(float(tail), 3)).split('.')
-    if len(split[1]) == 1:
-        intSplit = [int(split[0]), int(split[1])*100] ## add two zeros to the end if the rounded millisecond number is only one digit
-    else:
-        intSplit = [int(split[0]), int(split[1])]
-    return intSplit
 
 
-# Calculate 2D distance
-def dist2D(x1, y1, x2, y2):
-    return(((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5)
-
-## Classes
-class trackPoint:
-    def __init__(self, x, y, dateTimePass, frameId=0, Id=0, userType=None, userTypeLength=0, userTypeWidth=0, userTypeHeight=0, xpxl=None, ypxl=None, pPoint=None, stepsBackSec=None):
-
-        # Definitions of parsed variables
-        self.x = x
-        self.y = y
-        self.prevPoint = pPoint ## The entire trackPoint instance for the previous point.
-        self.stepsBackSec = stepsBackSec
-        self.frameId = frameId
-        self.Id = Id
-        self.dateTime = dateTimePass
-        self.userType = userType
-        self.userTypeLength = userTypeLength
-        self.userTypeWidth = userTypeWidth
-        self.userTypeHeight = userTypeHeight
-        self.xpxl = xpxl
-        self.ypxl = ypxl
-
-        # Definitions of variables created inside trackPoint class
-        ## Distance
-        self.deltaDist = 0.0 ## Distance relative to the last location, m
-        self.stepBackDist = 0.0  ## Distance relative to the point at a given point back in time, m
-        self.akkuDist = 0.0  ## Distance relative to the start of the track, m
-
-        ## Time
-        self.deltaTimeSec = 0.0 ## Time spend relative to the last location, seconds
-        self.stepBackTimeSec = 0.0  ## TODO: Time spend relative to a given point back in time, seconds
-        self.akkuTimeSec = 0.0  ## Time spend relative to the start of the track, seconds
-
-        ## Speed
-        self.speed = 0.0     ## Speed relative to the last location, km/h
-        self.stepBackSpeed = 0.0 ## TODO: Speed over the last second, km/h
-        self.akkuSpeed = 0.0 ## Speed over entire track this far, km/h
-
-        ## Azimuth
-        self.angle = 0.0     ## From previous location (relative to the previous leg)
-        self.stepBackAngle = 0.0 ## TODO: From location relative to a given point back in time (relative to the previous leg)
-        self.akkuAngle = 0.0 ## From start of the track (relative to the end of the track)
-
-        # Calculation of movement parameters for the track
-        if pPoint: ## If the point is not the first of a track then calculate the following:
-            self.deltaDist = dist2D(self.x, self.y, pPoint.x, pPoint.y)  ## Distance between points, in meters
-            self.akkuDist = pPoint.akkuDist + self.deltaDist   ## Distance relative to the start of the track, in meters
-            dtime = self.dateTime - self.prevPoint.dateTime
-            self.deltaTimeSec = dtime.seconds + (dtime.microseconds / 1000000.0) ## Time spend relative to the last location, seconds
-            self.akkuTimeSec = pPoint.akkuTimeSec + self.deltaTimeSec  ## Time spend relative to the start of the track, seconds
-            if self.deltaTimeSec > 0:
-                self.speed = (self.deltaDist / 1000) /(self.deltaTimeSec / 3600)     ## Speed relative to the last location, km/h
-            else:
-                self.speed = 0.0
-            if self.akkuTimeSec > 0:
-                self.akkuSpeed = (self.akkuDist / 1000) /(self.akkuTimeSec / 3600) ## Speed over entire track this far, km/h
-            else:
-                self.akkuSpeed = 0.0
-            # --- Calculating parameters 'self.stepsBackSec' back in time --- Check if all below this line i trackpoint is correct!!!!! - Angles can be calculated in PostGIS using ST_Azimuth
-            pp = self.prevPoint
-            deltaT = 0.0 ##float((self.dateTime - pp.dateTime).seconds)
-            c = 0
-            while pp and deltaT < self.stepsBackSec:
-                deltaT = (self.dateTime - pp.dateTime).seconds
-##                if int(self.Id) in (0, 1) and int(self.frameId) in (61, 62):
-##                    print(self.frameId, self.Id, pp.prevPoint.frameId, (self.dateTime - pp.dateTime).seconds, c, self.Id, deltaT)
-                p = pp
-                pp = pp.prevPoint
-                ##print(pp.Id, deltaT, pp.dateTime)
-                c += 1
-            if not pp:
-                self.stepBackDist = 0.0
-                self.stepBackTimeSec = 0.0
-                self.stepBackAngle = 0.0
-            else:
-                ##print(deltaT, self.stepsBackSec, self.akkuDist, pp.akkuDist)
-                self.stepBackDist = self.akkuDist - pp.akkuDist
-                self.stepBackTimeSec = (self.dateTime - pp.dateTime).seconds
-                ##print(self.dateTime, pp.dateTime, self.stepBackTimeSec)
-##                self.stepBackSpeed = (self.stepBackDist / 1000) /(self.stepBackTimeSec / 3600) ## TODO ------------------ problem with division with zero!
-                self.stepBackAngle = 0.0 ##TODO
-##            if int(self.frameId) in (61, 62, 63):
-##                print(c, pp, self.frameId, self.dateTime, deltaT, '%.2f' % self.stepBackDist, '%.2f' % self.stepBackSpeed)
-              # end of  questionable section
 
 ## ---------------------------------------------
 # Main
@@ -236,16 +136,18 @@ while line:
 # Writing output .txt (CSV) files
 
 ## Writing headers
-outFile.write("FrameID" + delim + "RespID" + delim + "X" + delim + "Y" + delim + "DateTime" + delim +
-             "DeltaTimeSec" + delim + "AkkuTimeSec" + delim + "StepBackTimeSec" + delim +
-             "DeltaDist"+ delim + "AkkuDist"  + delim + "StepBackDist" + delim +
-             "Speed" + delim + "AkkuAvgSpeedS" + delim + "StepBackSpeed" + delim + "StepBackDurationSec" + delim + "Xpxl" + delim + "Ypxl" + "\n")
+outFile.write(delim.join(["FrameID", "RespID", "X", "Y","DateTime","DeltaTimeSec"  "AkkuTimeSec" , \
+               "StepBackTimeSec" , "DeltaDist", "AkkuDist"  , "StepBackDist" ,
+             "Speed" , "AkkuAvgSpeedS" , "StepBackSpeed" , "StepBackDurationSec" , "Xpxl" ,
+             "Ypxl"])+ "\n") # ",".join(["a","b","c"]) -> a,b,c
 
-outFileBasic.write("FrameID" + delim + "RespID" + delim + "X" + delim + "Y" + delim + "DateTime" + "\n")
+outFileBasic.write(delim.join(["FrameID" , "RespID" , "X" , "Y" , "DateTime"])+ "\n")
 
 
-outStatFile.write("RespondentID" + delim + "Distance" + delim + "EuclidDist" + delim + "Sinuosity" + delim + "DurationSec" + delim +
-                 "AvgSpeed" + delim + "NumPoints" + delim + "FromFrame" + delim + "ToFrame"+ delim + "RoadUserType" + delim + "RoadUserLenght" + delim + "RoadUSerWidth" + delim + "RoadUserHeight" + "\n")
+outStatFile.write(delim.join(["RespondentID" , "Distance" , "EuclidDist" , "Sinuosity" , \
+                          "DurationSec" ,
+                 "AvgSpeed" , "NumPoints" , "FromFrame" , "ToFrame", "RoadUserType" ,
+                 "RoadUserLenght" , "RoadUSerWidth" , "RoadUserHeight"]) + "\n")
 
 outLineCount = 1
 subjectIds = list(frameDict.keys())
@@ -261,10 +163,12 @@ for subjectId in subjectIds:
     else:
         sinuosity = pLast.akkuDist/dist2D(pFirst.x, pFirst.y, pLast.x, pLast.y)
 
-    outStatFile.write(str(subjectId) + delim + '%.2f' % (pLast.akkuDist) + delim + '%.2f' % (dist2D(pFirst.x, pFirst.y, pLast.x, pLast.y)) + delim + '%.4f' % sinuosity + delim
-                     + '%.0f' % (pLast.akkuTimeSec) + delim + '%.2f' % (pLast.akkuSpeed) + delim
-                     + str(len(frameDict[subjectId])) + delim + str(pFirst.frameId) + delim
-                     + str(pLast.frameId) + delim + pLast.userType + delim + str(pLast.userTypeLength) + delim + str(pLast.userTypeWidth) + delim + str(pLast.userTypeHeight) + "\n")
+    outStatFile.write(delim.join([str(subjectId) , '%.2f' % (pLast.akkuDist) , '%.2f' % (dist2D(
+        pFirst.x, pFirst.y, pLast.x, pLast.y)) , '%.4f' % sinuosity + delim
+                     + '%.0f' % (pLast.akkuTimeSec) , '%.2f' % (pLast.akkuSpeed) + delim
+                     + str(len(frameDict[subjectId])) , str(pFirst.frameId) + delim
+                     + str(pLast.frameId) , pLast.userType , str(pLast.userTypeLength) ,
+                                  str(pLast.userTypeWidth) , str(pLast.userTypeHeight)]) + "\n")
     outStatLineCount += 1
     ## Writing info for individual points
     ## Get min and max values for x, y , dateTime
@@ -282,12 +186,14 @@ for subjectId in subjectIds:
         if p.y < minY: minY = p.y
         if p.dateTime > maxDateTime: maxDateTime = p.dateTime
         if p.dateTime < minDateTime: minDateTime = p.dateTime
-        outFile.write(str(p.frameId) + delim + str(subjectId) + delim + '%.2f' % (p.x) + delim + '%.2f' % (p.y) + delim + ping + str(p.dateTime) + ping + delim +
-                     '%.3f' % (p.deltaTimeSec) + delim + '%.3f' % (p.akkuTimeSec) + delim + '%.3f' % (p.stepBackTimeSec) + delim +
-                     '%.2f' % (p.deltaDist)+ delim + '%.2f' % (p.akkuDist) + delim + '%.2f' % (p.stepBackDist) + delim +
-                    '%.2f' % (p.speed) + delim + '%.2f' % (p.akkuSpeed) + delim + '%.2f' % (p.stepBackSpeed) + delim + '%.2f' % (p.stepBackTimeSec) + delim +'%.2f' % (p.xpxl) + delim + '%.2f' % (p.ypxl) + "\n")
+        outFile.write(delim.join([str(p.frameId) , str(subjectId) , '%.2f' % (p.x) , '%.2f' % (p.y) , ping + str(p.dateTime) + ping ,
+                     '%.3f' % (p.deltaTimeSec) , '%.3f' % (p.akkuTimeSec) , '%.3f' % (p.stepBackTimeSec) ,
+                     '%.2f' % (p.deltaDist), '%.2f' % (p.akkuDist) , '%.2f' % (p.stepBackDist) ,
+                    '%.2f' % (p.speed) , '%.2f' % (p.akkuSpeed) , '%.2f' % (p.stepBackSpeed) ,
+                    '%.2f' % (p.stepBackTimeSec) ,'%.2f' % (p.xpxl) , '%.2f' % (p.ypxl)]) + "\n")
 
-        outFileBasic.write(str(p.frameId) + delim + str(subjectId) + delim + '%.2f' % (p.x) + delim + '%.2f' % (p.y) + delim + ping + str(p.dateTime) + ping + "\n")
+        outFileBasic.write(delim.join([str(p.frameId) , str(subjectId) , '%.2f' % (p.x) ,
+                                       '%.2f' % (p.y) , ping + str(p.dateTime) + ping]) + "\n")
 
 # Closing files
 inFile.close()
@@ -297,11 +203,13 @@ outStatFile.close()
 
 ## Print messages
 print("Tanalyst2CSV done")
-print(str(inLineCount), "lines read from", inFileName)
-print(str(outLineCount), "lines written to", outFileName)
-print(str(outStatLineCount), "lines written to", outStatFileName)
+print(str(inLineCount), "lines read from ", inFileName)
+print(str(outLineCount), "lines written to ", outFileName)
+print(str(outStatLineCount), "lines written to ", outStatFileName)
 print("Outputs stored in " + path)
 spendTime = wallClock()  - startExecusionTime
 minutes = int(spendTime) / 60
 seconds = spendTime % 60
 print("Total execusion time:", int(minutes), "min", '%.2f' % seconds, "Sec")
+# another way to print stuff which may be more convenient is the following:
+print("Total execution time: {} min {0:.2f} sec".format(int(minutes), seconds))
